@@ -148,6 +148,8 @@ run_or_die [concat [list vlog -sv -work work +define+UVM_NO_DPI+MUL_NO_COVERGROU
 set TEST test_random
 if {[info exists ::env(UVM_TEST)]} { set TEST $::env(UVM_TEST) }
 set LOG [file join [pwd] run_sim.log]
+# Avoid parsing/re-reading diagnostics left by a previous run.
+catch {file delete -force $LOG}
 set SIM_CMD [list vsim -c -onfinish stop -suppress 19 -l $LOG]
 set DPI_CPP ""
 if {[info exists ::env(DPI_CPP_PATH)] && [string trim $::env(DPI_CPP_PATH)] ne ""} {
