@@ -1,11 +1,12 @@
-# 🔥 NEW (MUL/DIV integration) - compile + run the main UVM testbench on the
-# 🔥 free Questa / ModelSim edition.
+# 🔥 NEW (MUL/DIV integration) - compile + run the main UVM testbench on Questa / ModelSim.
 # 🔥 Usage (from the repo root):   vsim -c -do "do run.do"
 # 🔥 Optional environment variables:
-# 🔥   UVM_SRC  : path to UVM-1.2 "src" folder
-# 🔥              (default: $MODEL_TECH/../verilog_src/uvm-1.2/src)
-# 🔥   UVM_TEST : test name (default: test_random, which top.sv already runs)
-# 🔥   TB_ROOT  : repo root, only needed when not running from the repo root
+# 🔥   UVM_SRC      : path to UVM-1.2 "src" folder
+# 🔥                  (default: $MODEL_TECH/../verilog_src/uvm-1.2/src)
+# 🔥   UVM_TEST     : test name (default: test_random, which top.sv already runs)
+# 🔥   TB_ROOT      : repo root, only needed when not running from the repo root
+# 🔥   DPI_CPP_PATH : full path to a Questa-compatible C/C++ compiler executable;
+# 🔥                  set this if vsim reports vsim-7019 during DPI export compilation
 # 🔥 Exit code: 0 = no UVM_ERROR / UVM_FATAL / simulator error, 1 otherwise.
 
 # 🔥 helper: stop with exit code 1 on any failing command
@@ -41,7 +42,8 @@ echo "RUN.DO: UVM =$UVM"
 if {[file exists work]} { catch {vdel -all -lib work} }
 run_or_die {vlib work}
 
-# 🔥 1) UVM (no DPI: free edition has no C compiler flow)
+# 🔥 1) UVM with its optional DPI imports disabled. Some Questa builds can still
+# 🔥 generate DPI export wrappers during elaboration; those need a compatible C/C++ compiler.
 run_or_die [list vlog -sv -work work +define+UVM_NO_DPI +incdir+$UVM $UVM/uvm_pkg.sv]
 
 # 🔥 2) RTL packages
@@ -82,7 +84,14 @@ run_or_die [concat [list vlog -sv -work work +define+UVM_NO_DPI+MUL_NO_COVERGROU
 set TEST test_random
 if {[info exists ::env(UVM_TEST)]} { set TEST $::env(UVM_TEST) }
 set LOG [file join [pwd] run_sim.log]
-run_or_die [list vsim -c -onfinish stop -suppress 19 -l $LOG work.top +UVM_TESTNAME=$TEST +UVM_NO_RELNOTES]
+set SIM_CMD [list vsim -c -onfinish stop -suppress 19 -l $LOG]
+if {[info exists ::env(DPI_CPP_PATH)] && [string trim $::env(DPI_CPP_PATH)] ne ""} {
+    # Point Questa at its bundled/supported compiler when it cannot find one itself.
+    lappend SIM_CMD -dpicpppath $::env(DPI_CPP_PATH)
+    echo "RUN.DO: DPI compiler=$::env(DPI_CPP_PATH)"
+}
+lappend SIM_CMD work.top +UVM_TESTNAME=$TEST +UVM_NO_RELNOTES
+run_or_die $SIM_CMD
 onbreak {resume}
 run -all
 catch {transcript flush}
