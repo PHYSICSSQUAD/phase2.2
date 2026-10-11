@@ -18,19 +18,29 @@ proc run_or_die {cmd} {
     if {[catch {uplevel #0 $cmd} msg]} { die "'[lindex $cmd 0]' failed: $msg" }
 }
 
-# 🔥 Look for the compiler shipped beside Questa. DPI_CPP_PATH, when set, always wins.
-proc find_bundled_dpi_compiler {} {
-    set sim_dir ""
-    if {[info exists ::env(MODEL_TECH)] && [string trim $::env(MODEL_TECH)] ne ""} {
-        set sim_dir [file normalize $::env(MODEL_TECH)]
-    } elseif {[info exists ::env(MTI_HOME)] && [string trim $::env(MTI_HOME)] ne ""} {
-        set sim_dir [file normalize $::env(MTI_HOME)]
-    } else {
-        return ""
+# 🔥 Look beside Questa and on PATH for a compatible C/C++ compiler.
+# 🔥 DPI_CPP_PATH, when set, always wins and avoids any automatic selection.
+proc find_dpi_cpp_compiler {} {
+    set sim_dirs {}
+    foreach var {MODEL_TECH MTI_HOME} {
+        if {[info exists ::env($var)] && [string trim $::env($var)] ne ""} {
+            lappend sim_dirs [file normalize $::env($var)]
+        }
+    }
+    # MODEL_TECH/MTI_HOME are not set by every Questa launcher; use the running executable too.
+    if {![catch {set sim_exe [file normalize [info nameofexecutable]]}] && [file exists $sim_exe]} {
+        lappend sim_dirs $sim_exe
+    }
+    if {[llength $sim_dirs] == 0} { return "" }
+
+    set roots {}
+    foreach sim_dir $sim_dirs {
+        foreach root [list $sim_dir [file dirname $sim_dir] [file dirname [file dirname $sim_dir]]] {
+            if {[lsearch -exact $roots $root] < 0} { lappend roots $root }
+        }
     }
 
-    set roots [list $sim_dir [file dirname $sim_dir] [file dirname [file dirname $sim_dir]]]
-    set install_path [string tolower $sim_dir]
+    set install_path [string tolower [join $roots " "]]
     if {[string match "*win64*" $install_path]} {
         set patterns {
             gcc*-mingw64*/bin/g++.exe gcc*-mingw64*/bin/gcc.exe
@@ -58,8 +68,15 @@ proc find_bundled_dpi_compiler {} {
             if {[llength $matches] == 1} {
                 return [file normalize [lindex $matches 0]]
             }
-            # Multiple versions are ambiguous; require an explicit DPI_CPP_PATH.
-            if {[llength $matches] > 1} { return "" }
+        }
+    }
+
+    # Last resort: use a compiler already available on PATH. Explicit DPI_CPP_PATH is
+    # preferable when multiple compiler versions are installed.
+    foreach name {g++.exe gcc.exe g++ gcc} {
+        if {![catch {set command [auto_execok $name]}] && [llength $command] == 1} {
+            set compiler [lindex $command 0]
+            if {[file isfile $compiler]} { return [file normalize $compiler] }
         }
     }
     return ""
@@ -136,14 +153,14 @@ set DPI_CPP ""
 if {[info exists ::env(DPI_CPP_PATH)] && [string trim $::env(DPI_CPP_PATH)] ne ""} {
     set DPI_CPP [string trim $::env(DPI_CPP_PATH)]
 } else {
-    set DPI_CPP [find_bundled_dpi_compiler]
+    set DPI_CPP [find_dpi_cpp_compiler]
 }
 if {$DPI_CPP ne ""} {
     if {![file isfile $DPI_CPP]} { die "DPI compiler not found: $DPI_CPP (check DPI_CPP_PATH)" }
     lappend SIM_CMD -dpicpppath $DPI_CPP
     echo "RUN.DO: DPI compiler=$DPI_CPP"
 } else {
-    echo "RUN.DO: No bundled DPI compiler auto-detected; using Questa's modelsim.ini/default."
+    echo "RUN.DO: No bundled/PATH DPI compiler auto-detected; using Questa's modelsim.ini/default."
     echo "RUN.DO: If vsim reports vsim-7019, install a compatible compiler or set DPI_CPP_PATH."
 }
 lappend SIM_CMD work.top +UVM_TESTNAME=$TEST +UVM_NO_RELNOTES
