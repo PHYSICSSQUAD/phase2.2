@@ -147,9 +147,9 @@ run_or_die [concat [list vlog -sv -work work +define+UVM_NO_DPI+MUL_NO_COVERGROU
 # 🔥 5) Simulate. -suppress 19: ModelSim looks for an "mtiUvm" library it does not need.
 set TEST test_random
 if {[info exists ::env(UVM_TEST)]} { set TEST $::env(UVM_TEST) }
-set LOG [file join [pwd] run_sim.log]
-# Avoid parsing/re-reading diagnostics left by a previous run.
-catch {file delete -force $LOG}
+set LOG_TAG [clock format [clock seconds] -format %Y%m%d_%H%M%S]
+set LOG [file join [pwd] "run_sim_${LOG_TAG}_[pid]_[clock clicks].log"]
+echo "RUN.DO: simulation log=$LOG"
 set SIM_CMD [list vsim -c -onfinish stop -suppress 19 -l $LOG]
 set DPI_CPP ""
 if {[info exists ::env(DPI_CPP_PATH)] && [string trim $::env(DPI_CPP_PATH)] ne ""} {
