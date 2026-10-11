@@ -157,8 +157,24 @@ if {[info exists ::env(DPI_CPP_PATH)] && [string trim $::env(DPI_CPP_PATH)] ne "
 }
 if {$DPI_CPP ne ""} {
     if {![file isfile $DPI_CPP]} { die "DPI compiler not found: $DPI_CPP (check DPI_CPP_PATH)" }
+    # Questa launches GCC outside the MSYS2 shell. Add its bin directory so GCC
+    # can locate its assembler, linker, and runtime DLLs during DPI wrapper builds.
+    set DPI_CPP_DIR [file dirname $DPI_CPP]
+    if {![info exists ::env(PATH)] || [string first $DPI_CPP_DIR $::env(PATH)] < 0} {
+        if {[info exists ::env(OS)] && [string equal -nocase $::env(OS) "Windows_NT"]} {
+            set PATH_SEPARATOR ";"
+        } else {
+            set PATH_SEPARATOR ":"
+        }
+        if {[info exists ::env(PATH)] && $::env(PATH) ne ""} {
+            set ::env(PATH) "$DPI_CPP_DIR$PATH_SEPARATOR$::env(PATH)"
+        } else {
+            set ::env(PATH) $DPI_CPP_DIR
+        }
+    }
     lappend SIM_CMD -dpicpppath $DPI_CPP
     echo "RUN.DO: DPI compiler=$DPI_CPP"
+    echo "RUN.DO: PATH includes $DPI_CPP_DIR"
 } else {
     echo "RUN.DO: No bundled/PATH DPI compiler auto-detected; using Questa's modelsim.ini/default."
     echo "RUN.DO: If vsim reports vsim-7019, install a compatible compiler or set DPI_CPP_PATH."
