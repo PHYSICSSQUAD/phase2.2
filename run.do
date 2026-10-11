@@ -5,8 +5,8 @@
 # 🔥                  (default: $MODEL_TECH/../verilog_src/uvm-1.2/src)
 # 🔥   UVM_TEST     : test name (default: test_random, which top.sv already runs)
 # 🔥   TB_ROOT      : repo root, only needed when not running from the repo root
-# 🔥   DPI_CPP_PATH : full path to a Questa-compatible C/C++ compiler executable;
-# 🔥                  set this if vsim reports vsim-7019 during DPI export compilation
+# 🔥   DPI_CPP_PATH : optional full path to a Questa-compatible C/C++ compiler;
+# 🔥                  overrides auto-detection if Questa does not find its bundled compiler
 # 🔥 Exit code: 0 = no UVM_ERROR / UVM_FATAL / simulator error, 1 otherwise.
 
 # 🔥 helper: stop with exit code 1 on any failing command
@@ -16,6 +16,53 @@ proc die {msg} {
 }
 proc run_or_die {cmd} {
     if {[catch {uplevel #0 $cmd} msg]} { die "'[lindex $cmd 0]' failed: $msg" }
+}
+
+# 🔥 Look for the compiler shipped beside Questa. DPI_CPP_PATH, when set, always wins.
+proc find_bundled_dpi_compiler {} {
+    set sim_dir ""
+    if {[info exists ::env(MODEL_TECH)] && [string trim $::env(MODEL_TECH)] ne ""} {
+        set sim_dir [file normalize $::env(MODEL_TECH)]
+    } elseif {[info exists ::env(MTI_HOME)] && [string trim $::env(MTI_HOME)] ne ""} {
+        set sim_dir [file normalize $::env(MTI_HOME)]
+    } else {
+        return ""
+    }
+
+    set roots [list $sim_dir [file dirname $sim_dir] [file dirname [file dirname $sim_dir]]]
+    set install_path [string tolower $sim_dir]
+    if {[string match "*win64*" $install_path]} {
+        set patterns {
+            gcc*-mingw64*/bin/g++.exe gcc*-mingw64*/bin/gcc.exe
+            win64_gcc-*/bin/g++.exe win64_gcc-*/bin/gcc.exe
+        }
+    } elseif {[string match "*win32*" $install_path]} {
+        set patterns {
+            gcc*-mingw32*/bin/g++.exe gcc*-mingw32*/bin/gcc.exe
+            win32_gcc-*/bin/g++.exe win32_gcc-*/bin/gcc.exe
+        }
+    } elseif {[string match "*linux*" $install_path]} {
+        set patterns {
+            linux_x86_64_gcc-*/bin/g++ linux_x86_64_gcc-*/bin/gcc
+            gcc*-linux*/bin/g++ gcc*-linux*/bin/gcc
+        }
+    } else {
+        set patterns {
+            gcc*/bin/g++.exe gcc*/bin/gcc.exe gcc*/bin/g++ gcc*/bin/gcc
+        }
+    }
+
+    foreach root $roots {
+        foreach pattern $patterns {
+            set matches [glob -nocomplain -directory $root $pattern]
+            if {[llength $matches] == 1} {
+                return [file normalize [lindex $matches 0]]
+            }
+            # Multiple versions are ambiguous; require an explicit DPI_CPP_PATH.
+            if {[llength $matches] > 1} { return "" }
+        }
+    }
+    return ""
 }
 
 # 🔥 repo root = folder with tb/top.sv (current dir, $TB_ROOT, or this script's folder)
@@ -85,10 +132,19 @@ set TEST test_random
 if {[info exists ::env(UVM_TEST)]} { set TEST $::env(UVM_TEST) }
 set LOG [file join [pwd] run_sim.log]
 set SIM_CMD [list vsim -c -onfinish stop -suppress 19 -l $LOG]
+set DPI_CPP ""
 if {[info exists ::env(DPI_CPP_PATH)] && [string trim $::env(DPI_CPP_PATH)] ne ""} {
-    # Point Questa at its bundled/supported compiler when it cannot find one itself.
-    lappend SIM_CMD -dpicpppath $::env(DPI_CPP_PATH)
-    echo "RUN.DO: DPI compiler=$::env(DPI_CPP_PATH)"
+    set DPI_CPP [string trim $::env(DPI_CPP_PATH)]
+} else {
+    set DPI_CPP [find_bundled_dpi_compiler]
+}
+if {$DPI_CPP ne ""} {
+    if {![file isfile $DPI_CPP]} { die "DPI compiler not found: $DPI_CPP (check DPI_CPP_PATH)" }
+    lappend SIM_CMD -dpicpppath $DPI_CPP
+    echo "RUN.DO: DPI compiler=$DPI_CPP"
+} else {
+    echo "RUN.DO: No bundled DPI compiler auto-detected; using Questa's modelsim.ini/default."
+    echo "RUN.DO: If vsim reports vsim-7019, install a compatible compiler or set DPI_CPP_PATH."
 }
 lappend SIM_CMD work.top +UVM_TESTNAME=$TEST +UVM_NO_RELNOTES
 run_or_die $SIM_CMD
