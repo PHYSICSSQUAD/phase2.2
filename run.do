@@ -31,8 +31,6 @@ proc find_dpi_cpp_compiler {} {
     if {![catch {set sim_exe [file normalize [info nameofexecutable]]}] && [file exists $sim_exe]} {
         lappend sim_dirs $sim_exe
     }
-    if {[llength $sim_dirs] == 0} { return "" }
-
     set roots {}
     foreach sim_dir $sim_dirs {
         foreach root [list $sim_dir [file dirname $sim_dir] [file dirname [file dirname $sim_dir]]] {
