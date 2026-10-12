@@ -71,6 +71,18 @@ proc find_dpi_cpp_compiler {} {
         }
     }
 
+    # Common MSYS2 UCRT64 locations (including the user's standard C:\\msys64 install).
+    set msys_roots {C:/msys64}
+    if {[info exists ::env(MSYS2_ROOT)] && [string trim $::env(MSYS2_ROOT)] ne ""} {
+        set msys_roots [linsert $msys_roots 0 [file normalize $::env(MSYS2_ROOT)]]
+    }
+    foreach root [lsort -unique $msys_roots] {
+        foreach relative {ucrt64/bin/g++.exe ucrt64/bin/gcc.exe mingw64/bin/g++.exe mingw64/bin/gcc.exe} {
+            set candidate [file join $root $relative]
+            if {[file isfile $candidate]} { return [file normalize $candidate] }
+        }
+    }
+
     # Last resort: use a compiler already available on PATH. Explicit DPI_CPP_PATH is
     # preferable when multiple compiler versions are installed.
     foreach name {g++.exe gcc.exe g++ gcc} {
